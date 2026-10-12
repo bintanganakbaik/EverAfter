@@ -242,7 +242,6 @@ ul {
 
 .btn-primary {
     background-color: var(--accent-color);
-    padding-bottom: 20px;
     color: white;
     box-shadow: var(--shadow-sm);
 }
