@@ -1,12 +1,10 @@
+'use strict';
+
 const App = {
     data: {
         profile: { name: '' },
         capsules: [],
-        settings: {
-            theme: 'light',
-            demoMode: false,
-            simulatedTime: null
-        }
+        settings: { theme: 'light', demoMode: false, simulatedTime: null }
     },
 
     state: {
@@ -17,17 +15,1786 @@ const App = {
         lastListRoute: 'view-dashboard'
     },
 
+    // Compatibility with the existing HTML Back button.
+    get lastListRoute() {
+        return this.state.lastListRoute;
+    },
+
+    set lastListRoute(value) {
+        this.state.lastListRoute = value;
+    },
+
     // --- STORAGE ---
     loadData() {
         try {
             const saved = localStorage.getItem('timeCapsule_data');
+            if (!saved) return;
 
-            if (saved) {
-                this.data = JSON.parse(saved);
+            const parsed = JSON.parse(saved);
+            this.data = parsed && typeof parsed === 'object'
+                ? parsed
+                : this.data;
 
-                if (!this.data.capsules) {
-                    this.data.capsules = [];
+            if (!Array.isArray(this.data.capsules)) {
+                this.data.capsules = [];
+            }
+
+            if (!this.data.profile) {
+                this.data.profile = { name: '' };
+            }
+
+            if (!this.data.settings) {
+                this.data.settings = {};
+            }
+
+            if (!('theme' in this.data.settings)) {
+                this.data.settings.theme = 'light';
+            }
+
+            if (!('demoMode' in this.data.settings)) {
+                this.data.settings.demoMode = false;
+            }
+
+            if (!('simulatedTime' in this.data.settings)) {
+                this.data.settings.simulatedTime = null;
+            }
+        } catch (error) {
+            console.error('Error loading data:', error);
+            this.showToast('Saved data could not be loaded.', 'error');
+        }
+    },
+
+    saveData() {
+        try {
+            localStorage.setItem(
+                'timeCapsule_data',
+                JSON.stringify(this.data)
+            );
+        } catch (error) {
+            console.error('Storage error:', error);
+            this.showToast(
+                'Storage error. Storage might be full.',
+                'error'
+            );
+        }
+    },
+
+    // --- TIME SYSTEM ---
+    getNow() {
+        if (
+            this.data.settings.demoMode &&
+            this.data.settings.simulatedTime
+        ) {
+            const simulated = new Date(
+                this.data.settings.simulatedTime
+            );
+
+            if (!Number.isNaN(simulated.getTime())) {
+                return simulated;
+            }
+        }
+
+        return new Date();
+    },
+
+    getCapsuleDisplayStatus(capsule) {
+        if (capsule.status === 'seal_broken') {
+            return 'seal_broken';
+        }
+
+        if (capsule.status === 'unlocked') {
+            return 'unlocked';
+        }
+
+        if (
+            this.data.settings.demoMode &&
+            capsule.status === 'sealed' &&
+            this.getNow() >= new Date(capsule.unlockAt)
+        ) {
+            return 'unlocked';
+        }
+
+        return 'sealed';
+    },
+
+    formatDate(value) {
+        const date = new Date(value);
+
+        return Number.isNaN(date.getTime())
+            ? 'Unknown date'
+            : date.toLocaleDateString(undefined, {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+    },
+
+    formatDateTime(value) {
+        const date = new Date(value);
+
+        return Number.isNaN(date.getTime())
+            ? 'Unknown date'
+            : date.toLocaleString(undefined, {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+    },
+
+    // --- INITIALIZATION ---
+    init() {
+        this.loadData();
+        this.applySettings();
+        this.setupNavigation();
+        this.setupCreateForm();
+
+        const greeting = document.getElementById('nav-greeting');
+        const nameInput = document.getElementById('setting-name');
+
+        if (this.data.profile.name) {
+            if (greeting) {
+                greeting.innerText =
+                    `Welcome back, ${this.data.profile.name}.`;
+            }
+
+            if (nameInput) {
+                nameInput.value = this.data.profile.name;
+            }
+        }
+
+        const hash = window.location.hash.slice(1);
+        const initial = hash && this.isView(hash)
+            ? hash
+            : 'view-home';
+
+        this.navigateTo(initial, false);
+
+        // Keep navigation synchronized with the browser URL.
+        window.addEventListener('hashchange', () => {
+            const requested = window.location.hash.slice(1);
+
+            this.navigateTo(
+                this.isView(requested) ? requested : 'view-home',
+                false
+            );
+        });
+
+        setInterval(() => this.checkUnlocks(), 10000);
+        this.checkUnlocks();
+    },
+
+    isView(viewId) {
+        const element = typeof viewId === 'string'
+            ? document.getElementById(viewId)
+            : null;
+
+        return !!element && element.classList.contains('view');
+    },
+
+    applySettings() {
+        const theme = this.data.settings.theme || 'light';
+
+        this.changeTheme(theme);
+
+        const themeSelect = document.getElementById('setting-theme');
+        if (themeSelect) {
+            themeSelect.value = theme;
+        }
+
+        const timeInput = document.getElementById('setting-demo-time');
+
+        if (
+            this.data.settings.demoMode &&
+            this.data.settings.simulatedTime
+        ) {
+            if (timeInput) {
+                timeInput.value =
+                    this.data.settings.simulatedTime.slice(0, 16);
+            }
+
+            this.updateDemoWidget();
+        } else {
+            const widget = document.getElementById('demo-widget');
+
+            if (widget) {
+                widget.style.display = 'none';
+            }
+        }
+    },
+
+    setupNavigation() {
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', event => {
+                event.preventDefault();
+
+                const target = link.getAttribute('data-target');
+
+                if (target) {
+                    this.navigateTo(target);
                 }
+            });
+        });
+
+        // Fix tombol Back pada halaman pembacaan kapsul.
+        // Hapus inline handler agar tidak terjadi navigasi ganda.
+        document.querySelectorAll(
+            'button[onclick*="lastListRoute"]'
+        ).forEach(button => {
+            button.removeAttribute('onclick');
+            button.setAttribute('type', 'button');
+
+            button.addEventListener('click', event => {
+                event.preventDefault();
+
+                const previousView = this.state.lastListRoute;
+
+                const destination = (
+                    this.isView(previousView) &&
+                    [
+                        'view-dashboard',
+                        'view-archive',
+                        'view-timeline'
+                    ].includes(previousView)
+                )
+                    ? previousView
+                    : 'view-dashboard';
+
+                this.navigateTo(destination);
+            });
+        });
+    },
+
+    // --- NAVIGATION ---
+    navigateTo(viewId, updateHash = true) {
+        // Never hide all views because of an invalid route.
+        if (!this.isView(viewId)) {
+            viewId = this.isView(this.state.lastListRoute)
+                ? this.state.lastListRoute
+                : 'view-home';
+        }
+
+        if (!this.isView(viewId)) return;
+
+        if (
+            viewId === 'view-capsule' &&
+            [
+                'view-dashboard',
+                'view-archive',
+                'view-timeline'
+            ].includes(this.state.currentView)
+        ) {
+            this.state.lastListRoute = this.state.currentView;
+        }
+
+        const targetView = document.getElementById(viewId);
+
+        document.querySelectorAll('.view').forEach(view => {
+            view.classList.toggle('active', view === targetView);
+        });
+
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.classList.toggle(
+                'active',
+                link.getAttribute('data-target') === viewId
+            );
+        });
+
+        this.state.currentView = viewId;
+
+        if (
+            updateHash &&
+            window.location.hash !== `#${viewId}`
+        ) {
+            window.location.hash = viewId;
+        }
+
+        clearInterval(this.state.countdownInterval);
+        this.state.countdownInterval = null;
+
+        if (viewId === 'view-dashboard') {
+            this.state.lastListRoute = viewId;
+            this.renderDashboard();
+        } else if (viewId === 'view-archive') {
+            this.state.lastListRoute = viewId;
+            this.renderArchive();
+        } else if (viewId === 'view-timeline') {
+            this.state.lastListRoute = viewId;
+            this.renderTimeline();
+        } else if (
+            viewId === 'view-capsule' &&
+            this.state.activeCapsuleId
+        ) {
+            this.renderActiveCapsule();
+        }
+    },
+
+    // --- CAPSULE BACK NAVIGATION ---
+    backFromCapsule() {
+        const previousView = this.state.lastListRoute;
+
+        const allowedViews = [
+            'view-dashboard',
+            'view-archive',
+            'view-timeline'
+        ];
+
+        const destination = allowedViews.includes(previousView)
+            ? previousView
+            : 'view-dashboard';
+
+        this.state.activeCapsuleId = null;
+        clearInterval(this.state.countdownInterval);
+        this.state.countdownInterval = null;
+
+        this.navigateTo(destination);
+    },
+
+    // --- PROFILE & SETTINGS ---
+    saveProfile() {
+        const input = document.getElementById('setting-name');
+        const name = input ? input.value.trim() : '';
+
+        this.data.profile.name = name;
+        this.saveData();
+
+        const greeting = document.getElementById('nav-greeting');
+
+        if (greeting) {
+            greeting.innerText = name
+                ? `Welcome back, ${name}.`
+                : 'Welcome.';
+        }
+
+        this.showToast('Profile saved.');
+    },
+
+    changeTheme(theme) {
+        this.data.settings.theme = theme || 'light';
+
+        document.body.setAttribute(
+            'data-theme',
+            this.data.settings.theme
+        );
+
+        this.saveData();
+    },
+
+    // --- DEMO MODE PASSWORD GATE ---
+    enableDemoMode() {
+        const password = prompt('Enter the Demo Mode password:');
+
+        if (password === null) {
+            this.showToast('Demo Mode cancelled.');
+            return;
+        }
+
+        if (password !== 'sayaadalahpenguji') {
+            this.showToast('Incorrect password.', 'error');
+            return;
+        }
+
+        const input = document.getElementById('setting-demo-time');
+        const timeInput = input ? input.value : '';
+
+        if (!timeInput) {
+            this.showToast(
+                'Please select a simulated time.',
+                'error'
+            );
+            return;
+        }
+
+        const simulatedDate = new Date(timeInput);
+
+        if (Number.isNaN(simulatedDate.getTime())) {
+            this.showToast('Invalid simulated time.', 'error');
+            return;
+        }
+
+        this.data.settings.demoMode = true;
+        this.data.settings.simulatedTime =
+            simulatedDate.toISOString();
+
+        // Simulation previews unlocks without permanently opening capsules.
+        this.saveData();
+        this.updateDemoWidget();
+        this.checkUnlocks();
+        this.showToast('Time simulation activated.');
+    },
+
+    disableDemoMode() {
+        this.data.settings.demoMode = false;
+        this.data.settings.simulatedTime = null;
+
+        this.saveData();
+
+        const widget = document.getElementById('demo-widget');
+
+        if (widget) {
+            widget.style.display = 'none';
+        }
+
+        clearInterval(this.state.countdownInterval);
+        this.state.countdownInterval = null;
+
+        this.checkUnlocks();
+
+        if (
+            this.state.currentView === 'view-capsule' &&
+            this.state.activeCapsuleId
+        ) {
+            this.openCapsuleView(this.state.activeCapsuleId);
+        }
+
+        this.showToast('Returned to real time.');
+    },
+
+    updateDemoWidget() {
+        const widget = document.getElementById('demo-widget');
+        const timeLabel = document.getElementById('demo-widget-time');
+
+        if (!widget) return;
+
+        if (
+            this.data.settings.demoMode &&
+            this.data.settings.simulatedTime
+        ) {
+            widget.style.display = 'block';
+
+            if (timeLabel) {
+                timeLabel.innerText = this.formatDateTime(
+                    this.data.settings.simulatedTime
+                );
+            }
+        } else {
+            widget.style.display = 'none';
+        }
+    },
+    // --- FORM HANDLING ---
+
+    // --- SOCIAL MEDIA MEMORIES ---
+    addSocialAccount() {
+        const container = document.getElementById('create-social-accounts');
+
+        if (!container) {
+            this.showToast('Social media form not found.', 'error');
+            return;
+        }
+
+        const id = `social-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        const item = document.createElement('div');
+        item.className = 'dynamic-item';
+        item.dataset.socialAccount = 'true';
+        item.id = id;
+
+        const group = document.createElement('div');
+        group.className = 'input-group';
+        group.style.flex = '1';
+
+        const platformLabel = document.createElement('label');
+        platformLabel.textContent = 'Social Media Name';
+
+        const platformInput = document.createElement('input');
+        platformInput.type = 'text';
+        platformInput.className = 'social-platform-input';
+        platformInput.placeholder = 'e.g. Instagram, TikTok, X';
+        platformInput.maxLength = 50;
+
+        const usernameLabel = document.createElement('label');
+        usernameLabel.textContent = 'Username or Profile Link';
+
+        const usernameInput = document.createElement('input');
+        usernameInput.type = 'text';
+        usernameInput.className = 'social-username-input';
+        usernameInput.placeholder = '@username or profile URL';
+        usernameInput.maxLength = 300;
+
+        group.append(
+            platformLabel,
+            platformInput,
+            usernameLabel,
+            usernameInput
+        );
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'remove-btn';
+        removeButton.textContent = '✕';
+        removeButton.setAttribute('aria-label', 'Remove social media account');
+
+        removeButton.addEventListener('click', () => {
+            item.remove();
+        });
+
+        item.append(group, removeButton);
+        container.appendChild(item);
+
+        platformInput.focus();
+    },
+
+    setupCreateForm() {
+        const songsContainer = document.getElementById('create-songs');
+
+        if (songsContainer) {
+            songsContainer.innerHTML = '';
+
+            for (let i = 1; i <= 3; i++) {
+                songsContainer.insertAdjacentHTML('beforeend', `
+                    <div class="input-group" style="background:rgba(0,0,0,0.02);padding:1rem;border-radius:var(--radius-md);">
+                        <label>#${i} Song</label>
+                        <div style="display:flex;gap:10px;margin-bottom:10px;">
+                            <input type="text" id="song-title-${i}" placeholder="Title" style="flex:1;">
+                            <input type="text" id="song-artist-${i}" placeholder="Artist" style="flex:1;">
+                        </div>
+                        <input type="text" id="song-reason-${i}" placeholder="Why this song? (Optional)">
+                    </div>
+                `);
+            }
+        }
+
+        if (document.getElementById('create-goals-list')) {
+            this.addDynamicItem('goals', 'A goal...');
+        }
+
+        if (document.getElementById('create-predictions-list')) {
+            this.addDynamicItem('predictions', 'A prediction...');
+        }
+
+        if (document.getElementById('create-qa-list')) {
+            this.addQAPair();
+        }
+    },
+
+    addDynamicItem(type, placeholder) {
+        const list = document.getElementById(`create-${type}-list`);
+        if (!list) return;
+
+        const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        const div = document.createElement('div');
+        div.className = 'dynamic-item';
+        div.id = `item-${id}`;
+
+        const safePlaceholder = String(placeholder || '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        div.innerHTML = `
+            <div class="input-group">
+                <input
+                    type="text"
+                    class="${type}-input"
+                    placeholder="${safePlaceholder}"
+                >
+            </div>
+            <button
+                type="button"
+                class="remove-btn"
+                onclick="document.getElementById('item-${id}').remove()"
+            >✕</button>
+        `;
+
+        list.appendChild(div);
+    },
+
+    addQAPair() {
+        const list = document.getElementById('create-qa-list');
+        if (!list) return;
+
+        const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+        const div = document.createElement('div');
+        div.className = 'dynamic-item';
+        div.style.flexDirection = 'column';
+        div.id = `qa-${id}`;
+
+        div.innerHTML = `
+            <div style="display:flex;width:100%;gap:10px;">
+                <div style="flex-grow:1;display:flex;flex-direction:column;gap:10px;background:rgba(0,0,0,0.02);padding:1rem;border-radius:var(--radius-md);">
+                    <input
+                        type="text"
+                        class="qa-q"
+                        placeholder="Question (e.g., What am I afraid of right now?)"
+                    >
+                    <input
+                        type="text"
+                        class="qa-a"
+                        placeholder="Answer"
+                    >
+                </div>
+                <button
+                    type="button"
+                    class="remove-btn"
+                    onclick="document.getElementById('qa-${id}').remove()"
+                >✕</button>
+            </div>
+        `;
+
+        list.appendChild(div);
+    },
+
+    handleImageSelect(event) {
+        const files = event.target.files;
+        if (!files || !files.length) return;
+
+        if (this.state.currentImages.length + files.length > 5) {
+            this.showToast('Maximum 5 images allowed.', 'error');
+            event.target.value = '';
+            return;
+        }
+
+        Array.from(files).forEach(file => {
+            if (!file.type.startsWith('image/')) return;
+
+            const reader = new FileReader();
+
+            reader.onload = e => {
+                const img = new Image();
+
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const scale = Math.min(1, 800 / img.width);
+
+                    canvas.width = Math.round(img.width * scale);
+                    canvas.height = Math.round(img.height * scale);
+
+                    const context = canvas.getContext('2d');
+
+                    if (!context) {
+                        this.showToast(
+                            'Could not process this image.',
+                            'error'
+                        );
+                        return;
+                    }
+
+                    context.drawImage(
+                        img,
+                        0,
+                        0,
+                        canvas.width,
+                        canvas.height
+                    );
+
+                    this.state.currentImages.push({
+                        id: `${Date.now()}-${Math.random()}`,
+                        data: canvas.toDataURL('image/jpeg', 0.7)
+                    });
+
+                    this.renderImagePreviews();
+                };
+
+                img.src = e.target.result;
+            };
+
+            reader.readAsDataURL(file);
+        });
+
+        event.target.value = '';
+    },
+
+    renderImagePreviews() {
+        const container = document.getElementById(
+            'create-image-previews'
+        );
+
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        this.state.currentImages.forEach(image => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'img-preview-wrapper';
+
+            const img = document.createElement('img');
+            img.src = image.data;
+            img.className = 'img-preview';
+            img.alt = 'Capsule image preview';
+
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'img-remove';
+            remove.textContent = '✕';
+            remove.setAttribute('aria-label', 'Remove image');
+
+            remove.addEventListener('click', () => {
+                this.removeImage(image.id);
+            });
+
+            wrapper.append(img, remove);
+            container.appendChild(wrapper);
+        });
+    },
+
+    removeImage(id) {
+        this.state.currentImages = this.state.currentImages.filter(
+            image => image.id != id
+        );
+
+        this.renderImagePreviews();
+    },
+
+    // --- CAPSULE CREATION ---
+    initiateSeal() {
+        const activeCount = this.data.capsules.filter(
+            capsule => capsule.status === 'sealed'
+        ).length;
+
+        if (activeCount >= 5) {
+            this.showToast(
+                "You've reached the limit of 5 active capsules.",
+                'error'
+            );
+            return;
+        }
+
+        const input = document.getElementById('create-unlock');
+        const unlockDate = new Date(input ? input.value : '');
+
+        if (
+            !input ||
+            !input.value ||
+            Number.isNaN(unlockDate.getTime()) ||
+            unlockDate <= this.getNow()
+        ) {
+            this.showToast(
+                'Unlock date must be in the future.',
+                'error'
+            );
+            return;
+        }
+
+        const modal = document.getElementById('modal-seal');
+
+        if (modal) {
+            modal.classList.add('active');
+        }
+    },
+
+    confirmSeal() {
+        this.closeModal('modal-seal');
+
+        const values = selector =>
+            Array.from(document.querySelectorAll(selector))
+                .map(input => input.value.trim())
+                .filter(Boolean);
+
+        const goals = values('.goals-input');
+        const predictions = values('.predictions-input');
+
+        const customQuestions = Array.from(
+            document.querySelectorAll('#create-qa-list .dynamic-item')
+        ).map(div => ({
+            question: (div.querySelector('.qa-q')?.value || '').trim(),
+            answer: (div.querySelector('.qa-a')?.value || '').trim()
+        })).filter(item => item.question && item.answer);
+
+
+        const socialAccounts = Array.from(
+            document.querySelectorAll(
+                '#create-social-accounts [data-social-account="true"]'
+            )
+        ).map(item => ({
+            platform: (
+                item.querySelector('.social-platform-input')?.value || ''
+            ).trim(),
+            username: (
+                item.querySelector('.social-username-input')?.value || ''
+            ).trim()
+        })).filter(item => item.platform || item.username);
+
+
+        const songs = [];
+
+        for (let i = 1; i <= 3; i++) {
+            const title =
+                document.getElementById(`song-title-${i}`)?.value.trim() || '';
+
+            const artist =
+                document.getElementById(`song-artist-${i}`)?.value.trim() || '';
+
+            const reason =
+                document.getElementById(`song-reason-${i}`)?.value.trim() || '';
+
+            if (title) {
+                songs.push({ rank: i, title, artist, reason });
+            }
+        }
+
+        const getValue = id =>
+            document.getElementById(id)?.value || '';
+
+        const unlockDate = new Date(getValue('create-unlock'));
+
+        if (!getValue('create-title').trim()) {
+            this.showToast('Please enter a capsule title.', 'error');
+            return;
+        }
+
+        if (
+            Number.isNaN(unlockDate.getTime()) ||
+            unlockDate <= this.getNow()
+        ) {
+            this.showToast(
+                'Unlock date must be in the future.',
+                'error'
+            );
+            return;
+        }
+
+        const newCapsule = {
+            id: (window.crypto && crypto.randomUUID)
+                ? crypto.randomUUID()
+                : `cap_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+
+            title: getValue('create-title').trim(),
+            createdAt: this.getNow().toISOString(),
+            unlockAt: unlockDate.toISOString(),
+            status: 'sealed',
+            favorite: false,
+            theme: getValue('create-theme') || 'paper',
+            letter: getValue('create-letter'),
+            images: this.state.currentImages.map(image => image.data),
+            favoriteSongs: songs,
+            socialAccounts,
+            goals,
+            predictions,
+            customQuestions,
+            shortMessage: getValue('create-short-message'),
+            thenNow: { currentAnswers: {} }
+        };
+
+        this.data.capsules.push(newCapsule);
+        this.saveData();
+
+        const form = document.getElementById('create-capsule-form');
+
+        if (form) {
+            form.reset();
+        }
+
+        this.state.currentImages = [];
+        this.renderImagePreviews();
+
+        this.showToast('Capsule sealed successfully.');
+        this.navigateTo('view-dashboard');
+    },
+
+    // --- RENDERING LISTS ---
+    renderDashboard() {
+        const active = this.data.capsules.filter(
+            capsule => capsule.status === 'sealed'
+        );
+
+        const count = document.getElementById('capsule-limit-text');
+
+        if (count) {
+            count.innerText = `Active capsules: ${active.length}/5`;
+        }
+
+        const button = document.getElementById('btn-dashboard-create');
+
+        if (button) {
+            button.style.display =
+                active.length >= 5 ? 'none' : 'block';
+        }
+
+        const grid = document.getElementById('active-capsules-grid');
+        if (!grid) return;
+
+        grid.innerHTML = active.length
+            ? ''
+            : '<p class="text-muted">No active capsules. Create one to begin.</p>';
+
+        active.forEach(capsule => {
+            grid.appendChild(this.createCapsuleCard(capsule));
+        });
+    },
+
+    renderArchive() {
+        const archived = this.data.capsules.filter(
+            capsule => capsule.status !== 'sealed'
+        );
+
+        archived.sort(
+            (a, b) =>
+                new Date(b.openedAt || 0) - new Date(a.openedAt || 0)
+        );
+
+        const grid = document.getElementById('archive-capsules-grid');
+        if (!grid) return;
+
+        grid.innerHTML = archived.length
+            ? ''
+            : '<p class="text-muted">Archive is empty.</p>';
+
+        archived.forEach(capsule => {
+            grid.appendChild(this.createCapsuleCard(capsule));
+        });
+    },
+
+    createCapsuleCard(capsule) {
+        const card = document.createElement('div');
+        const status = this.getCapsuleDisplayStatus(capsule);
+
+        card.className =
+            `capsule-card ${status === 'seal_broken' ? 'broken' : status} theme-${capsule.theme || 'paper'}`;
+
+        const favorite = !!capsule.favorite;
+
+        const statusText = status === 'unlocked'
+            ? '🔓 UNLOCKED'
+            : status === 'seal_broken'
+                ? '⚠️ SEAL BROKEN'
+                : '🔒 SEALED';
+
+        let extra = '';
+
+        if (status === 'sealed') {
+            const days = Math.max(
+                0,
+                Math.ceil(
+                    (new Date(capsule.unlockAt) - this.getNow()) /
+                    86400000
+                )
+            );
+
+            extra = `<div class="countdown">${days} days remaining</div>`;
+        } else if (
+            this.data.settings.demoMode &&
+            capsule.status === 'sealed'
+        ) {
+            extra = `
+                <div class="countdown" style="border:none;padding:0;text-align:left;">
+                    Demo preview — not permanently unlocked
+                </div>
+            `;
+        } else {
+            extra = `
+                <div class="countdown" style="border:none;padding:0;text-align:left;">
+                    Opened on ${this.formatDate(capsule.openedAt)}
+                </div>
+            `;
+        }
+
+        const favoriteButton = document.createElement('button');
+
+        favoriteButton.className =
+            `fav-btn ${favorite ? 'active' : ''}`;
+
+        favoriteButton.type = 'button';
+        favoriteButton.textContent = favorite ? '♥' : '♡';
+
+        favoriteButton.setAttribute(
+            'aria-label',
+            favorite ? 'Remove favorite' : 'Add favorite'
+        );
+
+        favoriteButton.addEventListener('click', event => {
+            event.stopPropagation();
+            this.toggleFavorite(capsule.id);
+        });
+
+        const statusDiv = document.createElement('div');
+
+        statusDiv.className =
+            `card-status ${status === 'seal_broken' ? 'broken' : status}`;
+
+        statusDiv.innerHTML = `<span>${statusText}</span>`;
+
+        const title = document.createElement('h3');
+        title.textContent = capsule.title || 'Untitled capsule';
+
+        const dates = document.createElement('div');
+        dates.className = 'card-dates';
+
+        dates.append(
+            'Created: ',
+            this.formatDate(capsule.createdAt),
+            document.createElement('br'),
+            'Opens: ',
+            this.formatDate(capsule.unlockAt)
+        );
+
+        const extraDiv = document.createElement('div');
+        extraDiv.innerHTML = extra;
+
+        card.append(favoriteButton, statusDiv, title, dates, extraDiv);
+
+        card.addEventListener('click', () => {
+            this.openCapsuleView(capsule.id);
+        });
+
+        return card;
+    },
+
+    toggleFavorite(id) {
+        const capsule = this.data.capsules.find(
+            item => item.id === id
+        );
+
+        if (!capsule) return;
+
+        capsule.favorite = !capsule.favorite;
+        this.saveData();
+
+        if (this.state.currentView === 'view-dashboard') {
+            this.renderDashboard();
+        }
+
+        if (this.state.currentView === 'view-archive') {
+            this.renderArchive();
+        }
+    },
+
+    // --- TIMELINE ---
+    renderTimeline() {
+        const container = document.getElementById('timeline-container');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        const sorted = [...this.data.capsules].sort(
+            (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+        );
+
+        if (!sorted.length) {
+            container.innerHTML = `
+                <p class="text-muted" style="padding-left:20px;">
+                    Timeline is empty.
+                </p>
+            `;
+            return;
+        }
+
+        let currentYear = '';
+
+        sorted.forEach(capsule => {
+            const date = new Date(capsule.createdAt);
+            const year = date.getFullYear();
+
+            if (year !== currentYear) {
+                const heading = document.createElement('h2');
+
+                heading.style.cssText =
+                    'padding-left:40px;margin-bottom:1rem;color:var(--accent-color);';
+
+                heading.textContent = year;
+                container.appendChild(heading);
+                currentYear = year;
+            }
+
+            const status = this.getCapsuleDisplayStatus(capsule);
+
+            const item = document.createElement('div');
+            item.className =
+                `timeline-item ${status !== 'sealed' ? 'unlocked' : ''}`;
+
+            const icon = status === 'sealed'
+                ? '🔒'
+                : status === 'seal_broken'
+                    ? '⚠️'
+                    : '🔓';
+
+            let text = `Unlocks ${this.formatDate(capsule.unlockAt)}`;
+
+            if (status === 'seal_broken') {
+                text = 'Seal broken';
+            } else if (status === 'unlocked') {
+                text = this.data.settings.demoMode &&
+                    capsule.status === 'sealed'
+                    ? 'Demo preview'
+                    : 'Opened';
+            }
+
+            const dateLabel = document.createElement('div');
+            dateLabel.className = 'timeline-date';
+
+            dateLabel.textContent = date.toLocaleDateString(
+                undefined,
+                { month: 'short', day: 'numeric' }
+            );
+
+            const card = document.createElement('div');
+
+            card.style.cssText = `
+                background:var(--surface-color);
+                padding:1rem;
+                border-radius:var(--radius-md);
+                border:1px solid var(--border-color);
+                display:inline-block;
+                min-width:200px;
+            `;
+
+            const strong = document.createElement('strong');
+            strong.textContent = capsule.title || 'Untitled capsule';
+
+            card.append(strong, document.createTextNode(` ${icon}`));
+
+            const statusLabel = document.createElement('div');
+
+            statusLabel.style.cssText =
+                'font-size:.8rem;color:var(--text-muted);margin-top:5px;';
+
+            statusLabel.textContent = text;
+            card.appendChild(statusLabel);
+
+            item.append(document.createElement('div'), dateLabel, card);
+            item.firstChild.className = 'timeline-dot';
+
+            container.appendChild(item);
+        });
+    },
+
+    // --- VIEW CAPSULE ---
+    openCapsuleView(id) {
+        const capsule = this.data.capsules.find(
+            item => item.id === id
+        );
+
+        if (!capsule) {
+            this.showToast('Capsule not found.', 'error');
+            return;
+        }
+
+        // Simpan halaman daftar asal sebelum membuka kapsul.
+        const currentView = this.state.currentView;
+
+        if (
+            [
+                'view-dashboard',
+                'view-archive',
+                'view-timeline'
+            ].includes(currentView)
+        ) {
+            this.state.lastListRoute = currentView;
+        }
+
+        this.state.activeCapsuleId = id;
+
+        // navigateTo() sudah memanggil renderActiveCapsule().
+        // Tidak perlu merendernya untuk kedua kalinya.
+        this.navigateTo('view-capsule');
+    },
+
+    renderActiveCapsule() {
+        const capsule = this.data.capsules.find(
+            item => item.id === this.state.activeCapsuleId
+        );
+
+        if (!capsule) {
+            this.navigateTo(
+                this.state.lastListRoute || 'view-dashboard'
+            );
+            return;
+        }
+
+        const container = document.getElementById('capsule-container');
+
+        if (container) {
+            container.className =
+                `capsule-reading-view theme-${capsule.theme || 'paper'}`;
+        }
+
+        const locked = document.getElementById('capsule-locked-content');
+        const unlocked = document.getElementById('capsule-unlocked-content');
+
+        const status = this.getCapsuleDisplayStatus(capsule);
+
+        if (status === 'sealed') {
+            if (locked) locked.classList.remove('hidden');
+            if (unlocked) unlocked.classList.add('hidden');
+
+            const title = document.getElementById('locked-title');
+            const created = document.getElementById('locked-created');
+            const opens = document.getElementById('locked-unlocks');
+
+            if (title) {
+                title.innerText = capsule.title || 'Untitled capsule';
+            }
+
+            if (created) {
+                created.innerText = this.formatDate(capsule.createdAt);
+            }
+
+            if (opens) {
+                opens.innerText = this.formatDateTime(capsule.unlockAt);
+            }
+
+            this.startCountdown(capsule.unlockAt);
+        } else {
+            if (locked) locked.classList.add('hidden');
+            if (unlocked) unlocked.classList.remove('hidden');
+
+            this.renderUnlockedContent(capsule);
+        }
+    },
+
+    startCountdown(targetDateStr) {
+        clearInterval(this.state.countdownInterval);
+
+        const target = new Date(targetDateStr).getTime();
+
+        const update = () => {
+            const diff = target - this.getNow().getTime();
+
+            if (diff <= 0) {
+                clearInterval(this.state.countdownInterval);
+                this.state.countdownInterval = null;
+                this.checkUnlocks();
+                return;
+            }
+
+            const units = {
+                'cd-d': Math.floor(diff / 86400000),
+                'cd-h': Math.floor((diff % 86400000) / 3600000),
+                'cd-m': Math.floor((diff % 3600000) / 60000),
+                'cd-s': Math.floor((diff % 60000) / 1000)
+            };
+
+            Object.entries(units).forEach(([id, value]) => {
+                const element = document.getElementById(id);
+
+                if (element) {
+                    element.innerText = String(value).padStart(2, '0');
+                }
+            });
+        };
+
+        update();
+        this.state.countdownInterval = setInterval(update, 1000);
+    },
+
+    renderUnlockedContent(capsule) {
+        const status = this.getCapsuleDisplayStatus(capsule);
+
+        const setText = (id, value) => {
+            const element = document.getElementById(id);
+
+            if (element) {
+                element.innerText = value ?? '';
+            }
+        };
+
+        setText(
+            'read-title',
+            (capsule.title || 'Untitled capsule') +
+            (status === 'seal_broken' ? ' (Seal Broken)' : '')
+        );
+
+        setText('read-created', this.formatDate(capsule.createdAt));
+
+        if (
+            this.data.settings.demoMode &&
+            capsule.status === 'sealed' &&
+            status === 'unlocked'
+        ) {
+            setText(
+                'read-opened',
+                'Demo Preview — not permanently opened'
+            );
+        } else if (capsule.openedAt) {
+            setText('read-opened', this.formatDate(capsule.openedAt));
+        } else {
+            setText('read-opened', 'Not opened yet');
+        }
+
+        setText('read-letter', capsule.letter || '');
+
+        // Images
+        const imageSection = document.getElementById('section-images');
+        const imageContainer = document.getElementById('read-images');
+
+        if (imageSection && imageContainer) {
+            imageContainer.innerHTML = '';
+
+            if (Array.isArray(capsule.images) && capsule.images.length) {
+                imageSection.style.display = 'block';
+
+                capsule.images.forEach(src => {
+                    const img = document.createElement('img');
+
+                    img.src = src;
+                    img.alt = 'Capsule memory';
+
+                    img.style.cssText = `
+                        max-width:100%;
+                        border-radius:var(--radius-md);
+                        box-shadow:var(--shadow-sm);
+                    `;
+
+                    imageContainer.appendChild(img);
+                });
+            } else {
+                imageSection.style.display = 'none';
+            }
+        }
+
+        // Favorite songs
+        const songsSection = document.getElementById('section-songs');
+        const songsContainer = document.getElementById('read-songs');
+
+        if (songsSection && songsContainer) {
+            songsContainer.innerHTML = '';
+
+            if (
+                Array.isArray(capsule.favoriteSongs) &&
+                capsule.favoriteSongs.length
+            ) {
+                songsSection.style.display = 'block';
+
+                capsule.favoriteSongs.forEach(song => {
+                    const row = document.createElement('div');
+                    row.style.marginBottom = '1rem';
+
+                    const strong = document.createElement('strong');
+                    strong.textContent =
+                        `#${song.rank} ${song.title || ''}`;
+
+                    row.append(
+                        strong,
+                        document.createTextNode(` by ${song.artist || ''}`)
+                    );
+
+                    if (song.reason) {
+                        row.appendChild(document.createElement('br'));
+
+                        const reason = document.createElement('span');
+
+                        reason.style.cssText =
+                            'font-style:italic;color:var(--text-muted);';
+
+                        reason.textContent = `“${song.reason}”`;
+                        row.appendChild(reason);
+                    }
+
+                    songsContainer.appendChild(row);
+                });
+            } else {
+                songsSection.style.display = 'none';
+            }
+        }
+
+
+        // Social Media Memories
+        const socialSection = document.getElementById(
+            'section-social-accounts'
+        );
+        const socialContainer = document.getElementById(
+            'read-social-accounts'
+        );
+
+        if (socialSection && socialContainer) {
+            socialContainer.innerHTML = '';
+
+            const accounts = Array.isArray(capsule.socialAccounts)
+                ? capsule.socialAccounts
+                : [];
+
+            if (accounts.length > 0) {
+                socialSection.style.display = 'block';
+
+                accounts.forEach(account => {
+                    const card = document.createElement('div');
+                    card.className = 'dynamic-item';
+                    card.style.marginBottom = '1rem';
+
+                    const content = document.createElement('div');
+                    content.style.flex = '1';
+
+                    const platform = document.createElement('strong');
+                    platform.textContent = account.platform || 'Social Media';
+
+                    content.appendChild(platform);
+
+                    if (account.username) {
+                        content.appendChild(
+                            document.createElement('br')
+                        );
+
+                        const username = document.createElement('span');
+                        username.textContent = account.username;
+                        username.style.color = 'var(--text-muted)';
+
+                        content.appendChild(username);
+                    }
+
+                    card.appendChild(content);
+                    socialContainer.appendChild(card);
+                });
+            } else {
+                socialSection.style.display = 'none';
+            }
+        }
+
+
+        // Then vs Now
+        const goalsBox = document.getElementById('then-now-goals');
+        const predictionsBox =
+            document.getElementById('then-now-predictions');
+        const qaBox = document.getElementById('then-now-qa');
+        const section = document.getElementById('section-then-now');
+        const saveButton = document.getElementById('btn-save-now');
+
+        [goalsBox, predictionsBox, qaBox].forEach(box => {
+            if (box) box.innerHTML = '';
+        });
+
+        if (!capsule.thenNow) {
+            capsule.thenNow = { currentAnswers: {} };
+        }
+
+        if (!capsule.thenNow.currentAnswers) {
+            capsule.thenNow.currentAnswers = {};
+        }
+
+        const answers = capsule.thenNow.currentAnswers;
+
+        let hasContent = false;
+        let editing = false;
+
+        const makeRow = (id, label, thenText) => {
+            hasContent = true;
+
+            const now = answers[id] || '';
+
+            if (!now) {
+                editing = true;
+            }
+
+            const row = document.createElement('div');
+            row.className = 'then-now-grid mb-4';
+
+            const thenCol = document.createElement('div');
+            thenCol.className = 'then-col';
+
+            const thenLabel = document.createElement('div');
+            thenLabel.className = 'text-muted';
+
+            thenLabel.style.cssText =
+                'font-size:.8rem;text-transform:uppercase;';
+
+            thenLabel.textContent = `${label} (Then)`;
+
+            const thenValue = document.createElement('div');
+            thenValue.textContent = thenText || '';
+
+            thenCol.append(thenLabel, thenValue);
+
+            const nowCol = document.createElement('div');
+            nowCol.className = 'now-col';
+
+            const nowLabel = document.createElement('div');
+            nowLabel.className = 'text-muted';
+
+            nowLabel.style.cssText =
+                'font-size:.8rem;text-transform:uppercase;';
+
+            nowLabel.textContent = 'Now';
+            nowCol.appendChild(nowLabel);
+
+            if (now) {
+                const value = document.createElement('div');
+                value.textContent = now;
+                nowCol.appendChild(value);
+            } else {
+                const textarea = document.createElement('textarea');
+
+                textarea.dataset.tnId = id;
+                textarea.className = 'tn-input';
+                textarea.placeholder = 'Reflect on this now...';
+
+                textarea.style.cssText = `
+                    min-height:60px;
+                    width:100%;
+                    border:none;
+                    background:transparent;
+                    resize:vertical;
+                `;
+
+                nowCol.appendChild(textarea);
+            }
+
+            row.append(thenCol, nowCol);
+
+            return row;
+        };
+
+        const fillGroup = (
+            box,
+            heading,
+            entries,
+            labelFn,
+            textFn,
+            prefix
+        ) => {
+            if (!box || !Array.isArray(entries) || !entries.length) {
+                return;
+            }
+
+            const title = document.createElement('h4');
+            title.className = 'serif mt-4 mb-4';
+            title.textContent = heading;
+
+            box.appendChild(title);
+
+            entries.forEach((entry, index) => {
+                box.appendChild(
+                    makeRow(
+                        `${prefix}_${index}`,
+                        labelFn(entry),
+                        textFn(entry)
+                    )
+                );
+            });
+        };
+
+        fillGroup(
+            goalsBox,
+            'Goals',
+            capsule.goals,
+            () => 'Goal',
+            value => value,
+            'goal'
+        );
+
+        fillGroup(
+            predictionsBox,
+            'Predictions',
+            capsule.predictions,
+            () => 'Prediction',
+            value => value,
+            'pred'
+        );
+
+        fillGroup(
+            qaBox,
+            'Q&A',
+            capsule.customQuestions,
+            item => item.question,
+            item => item.answer,
+            'qa'
+        );
+
+        if (section) {
+            section.style.display = hasContent ? 'block' : 'none';
+        }
+
+        if (saveButton) {
+            saveButton.className =
+                hasContent && editing ? 'btn btn-primary' : 'hidden';
+        }
+
+        setText('read-short-message', capsule.shortMessage || '');
+    },
+
+    saveThenNowAnswers() {
+        const capsule = this.data.capsules.find(
+            item => item.id === this.state.activeCapsuleId
+        );
+
+        if (!capsule) return;
+
+        if (!capsule.thenNow) {
+            capsule.thenNow = { currentAnswers: {} };
+        }
+
+        if (!capsule.thenNow.currentAnswers) {
+            capsule.thenNow.currentAnswers = {};
+        }
+
+        let savedAny = false;
+
+        document.querySelectorAll('.tn-input').forEach(input => {
+            if (input.value.trim()) {
+                capsule.thenNow.currentAnswers[input.dataset.tnId] =
+                    input.value.trim();
+
+                savedAny = true;
+            }
+        });
+
+        if (savedAny) {
+            this.saveData();
+            this.renderUnlockedContent(capsule);
+            this.showToast('Reflections saved to archive.');
+        } else {
+            this.showToast('No new reflections to save.', 'error');
+        }
+    },
+
+    // --- UNLOCK LOGIC ---
+    checkUnlocks() {
+        const now = this.getNow();
+
+        // Demo Mode is preview-only. It never permanently unlocks capsules.
+        if (this.data.settings.demoMode) {
+            if (this.state.currentView === 'view-dashboard') {
+                this.renderDashboard();
+            } else if (this.state.currentView === 'view-archive') {
+                this.renderArchive();
+            } else if (this.state.currentView === 'view-timeline') {
+                this.renderTimeline();
+            } else if (
+                this.state.currentView === 'view-capsule' &&
+                this.state.activeCapsuleId
+            ) {
+                this.renderActiveCapsule();
+            }
+
+            return;
+        }
+
+        let newlyUnlocked = 0;
+
+        this.data.capsules.forEach(capsule => {
+            if (capsule.status !== 'sealed') return;
+
+            const unlockTime = new Date(capsule.unlockAt);
+
+            if (
+                !Number.isNaN(unlockTime.getTime()) &&
+                now >= unlockTime
+            ) {
+                capsule.status = 'unlocked';
+                capsule.openedAt = now.toISOString();
+                newlyUnlocked++;
+            }
+        });
+
+        if (newlyUnlocked) {
+            this.saveData();
+
+            this.showToast(
+                `🔓 ${newlyUnlocked} capsule(s) just unlocked!`
+            );
+
+            if (this.state.currentView === 'view-dashboard') {
+                this.renderDashboard();
+            } else if (this.state.currentView === 'view-archive') {
+                this.renderArchive();
+            } else if (this.state.currentView === 'view-timeline') {
+                this.renderTimeline();
+            } else if (
+                this.state.currentView === 'view-capsule' &&
+                this.state.activeCapsuleId
+            ) {
+                this.renderActiveCapsule();
+            }
+        }
+    },
+
+    // --- BREAK SEAL ---
+    requestBreakSeal() {
+        const modal = document.getElementById('modal-break');
+
+        if (modal) {
+            modal.classList.add('active');
+        }
+    },
+
+    executeBreakSeal() {
+        this.closeModal('modal-break');
+
+        const capsule = this.data.capsules.find(
+            item => item.id === this.state.activeCapsuleId
+        );
+
+        if (!capsule) return;
+
+        if (capsule.status === 'sealed') {
+            capsule.status = 'seal_broken';
+            capsule.openedAt = new Date().toISOString();
+
+            this.saveData();
+            this.openCapsuleView(capsule.id);
+            this.showToast('Seal broken.', 'error');
+        }
+    },
+
+    // --- UTILITIES ---
+    closeModal(id) {
+        const modal = document.getElementById(id);
+
+        if (modal) {
+            modal.classList.remove('active');
+        }
+    },
+
+    showToast(message, type = 'success') {
+        const container = document.getElementById('toast-container');
+
+        if (!container) {
+            console.log(message);
+            return;
+        }
+
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+
+        if (type === 'error') {
+            toast.style.borderLeftColor = '#C24A3F';
+        }
+
+        const text = document.createElement('span');
+        text.textContent = message;
+
+        toast.appendChild(text);
+        container.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(100%)';
+
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    },
+
+    // --- EXPORT / IMPORT ---
+    exportData() {
+        const blob = new Blob(
+            [JSON.stringify(this.data, null, 2)],
+            { type: 'application/json' }
+        );
+
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+
+        link.href = url;
+        link.download =
+            `time-capsule-backup-${new Date().toISOString().split('T')[0]}.json`;
+
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        URL.revokeObjectURL(url);
+    },
+
+    importData(event) {
+        const file = event.target.files && event.target.files[0];
+
+        if (!file) return;
+
+        const reader = new FileReader();
+
+        reader.onload = e => {
+            try {
+                const imported = JSON.parse(e.target.result);
+
+                if (
+                    !imported ||
+                    !Array.isArray(imported.capsules)
+                ) {
+                    throw new Error('Invalid format');
+                }
+
+                this.data = imported;
 
                 if (!this.data.profile) {
                     this.data.profile = { name: '' };
@@ -40,2104 +1807,18 @@ const App = {
                         simulatedTime: null
                     };
                 }
-            }
-        } catch (e) {
-            console.error("Error loading data", e);
-        }
-    },
 
-    saveData() {
-        try {
-            localStorage.setItem(
-                'timeCapsule_data',
-                JSON.stringify(this.data)
-            );
-        } catch (e) {
-            this.showToast(
-                "Storage error. Storage might be full.",
-                "error"
-            );
-        }
-    },
+                this.saveData();
+                this.applySettings();
 
-    // --- TIME SYSTEM ---
-    getNow() {
-        if (
-            this.data.settings.demoMode &&
-            this.data.settings.simulatedTime
-        ) {
-            return new Date(this.data.settings.simulatedTime);
-        }
+                this.showToast('Backup imported successfully.');
 
-        return new Date();
-    },
-
-    /*
-     * Returns the status that should currently be DISPLAYED.
-     *
-     * IMPORTANT:
-     * Demo Mode can visually unlock a capsule,
-     * but it NEVER changes the saved capsule status.
-     */
-    getCapsuleDisplayStatus(capsule) {
-        // Permanently broken seals remain broken.
-        if (capsule.status === 'seal_broken') {
-            return 'seal_broken';
-        }
-
-        // Permanently unlocked capsules remain unlocked.
-        if (capsule.status === 'unlocked') {
-            return 'unlocked';
-        }
-
-        // Demo Mode unlock is temporary and visual only.
-        if (
-            this.data.settings.demoMode &&
-            capsule.status === 'sealed' &&
-            new Date(this.getNow()) >= new Date(capsule.unlockAt)
-        ) {
-            return 'unlocked';
-        }
-
-        return 'sealed';
-    },
-
-    formatDate(dateStr) {
-        const opts = {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        };
-
-        return new Date(dateStr).toLocaleDateString(
-            undefined,
-            opts
-        );
-    },
-
-    formatDateTime(dateStr) {
-        const opts = {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        };
-
-        return new Date(dateStr).toLocaleString(
-            undefined,
-            opts
-        );
-    },
-
-    // --- INITIALIZATION ---
-    init() {
-        this.loadData();
-        this.applySettings();
-        this.setupNavigation();
-        this.setupCreateForm();
-
-        // Greeting
-        if (this.data.profile.name) {
-            document.getElementById('nav-greeting').innerText =
-                `Welcome back, ${this.data.profile.name}.`;
-
-            document.getElementById('setting-name').value =
-                this.data.profile.name;
-        }
-
-        // Initial Routing
-        const hash = window.location.hash.replace('#', '');
-
-        if (hash && document.getElementById(hash)) {
-            this.navigateTo(hash);
-        } else {
-            this.navigateTo('view-home');
-        }
-
-        // Global time check
-        setInterval(() => this.checkUnlocks(), 10000);
-
-        this.checkUnlocks();
-    },
-
-    applySettings() {
-        this.changeTheme(this.data.settings.theme);
-
-        document.getElementById('setting-theme').value =
-            this.data.settings.theme;
-
-        if (
-            this.data.settings.demoMode &&
-            this.data.settings.simulatedTime
-        ) {
-            document.getElementById('setting-demo-time').value =
-                this.data.settings.simulatedTime.slice(0, 16);
-
-            this.updateDemoWidget();
-        }
-    },
-
-    setupNavigation() {
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-
-                const target =
-                    link.getAttribute('data-target');
-
-                if (target) {
-                    this.navigateTo(target);
-                }
-            });
-        });
-    },
-
-    // --- NAVIGATION ---
-    navigateTo(viewId) {
-        document.querySelectorAll('.view')
-            .forEach(v => v.classList.remove('active'));
-
-        document.querySelectorAll('.nav-link')
-            .forEach(l => l.classList.remove('active'));
-
-        const targetView =
-            document.getElementById(viewId);
-
-        if (targetView) {
-            targetView.classList.add('active');
-        }
-
-        const navLink =
-            document.querySelector(
-                `.nav-link[data-target="${viewId}"]`
-            );
-
-        if (navLink) {
-            navLink.classList.add('active');
-        }
-
-        this.state.currentView = viewId;
-
-        window.location.hash = viewId;
-
-        clearInterval(this.state.countdownInterval);
-
-        if (viewId === 'view-dashboard') {
-            this.state.lastListRoute = 'view-dashboard';
-            this.renderDashboard();
-        }
-
-        else if (viewId === 'view-archive') {
-            this.state.lastListRoute = 'view-archive';
-            this.renderArchive();
-        }
-
-        else if (viewId === 'view-timeline') {
-            this.renderTimeline();
-        }
-    },
-
-    // --- PROFILE & SETTINGS ---
-    saveProfile() {
-        const name =
-            document.getElementById('setting-name')
-                .value.trim();
-
-        this.data.profile.name = name;
-
-        this.saveData();
-
-        document.getElementById('nav-greeting').innerText =
-            `Welcome back, ${name}.`;
-
-        this.showToast("Profile saved.");
-    },
-
-    changeTheme(theme) {
-        this.data.settings.theme = theme;
-
-        document.body.setAttribute(
-            'data-theme',
-            theme
-        );
-
-        this.saveData();
-    },
-
-    enableDemoMode() {
-        const timeInput =
-            document.getElementById('setting-demo-time').value;
-
-        if (!timeInput) {
-            this.showToast(
-                "Please select a simulated time.",
-                "error"
-            );
-            return;
-        }
-
-        this.data.settings.demoMode = true;
-
-        this.data.settings.simulatedTime =
-            new Date(timeInput).toISOString();
-
-        /*
-         * IMPORTANT:
-         * We intentionally DO NOT modify any capsule status here.
-         */
-        this.saveData();
-
-        this.updateDemoWidget();
-
-        this.checkUnlocks();
-
-        this.showToast(
-            "Time simulation activated."
-        );
-    },
-
-    disableDemoMode() {
-        /*
-         * Turning Demo Mode off only changes the application clock.
-         * It does NOT modify capsule data.
-         */
-        this.data.settings.demoMode = false;
-        this.data.settings.simulatedTime = null;
-
-        this.saveData();
-
-        document.getElementById('demo-widget').style.display =
-            'none';
-
-        clearInterval(this.state.countdownInterval);
-
-        this.checkUnlocks();
-
-        this.showToast(
-            "Returned to real time."
-        );
-    },
-
-    updateDemoWidget() {
-        if (this.data.settings.demoMode) {
-            const widget =
-                document.getElementById('demo-widget');
-
-            widget.style.display = 'block';
-
-            document.getElementById(
-                'demo-widget-time'
-            ).innerText =
-                this.formatDateTime(
-                    this.data.settings.simulatedTime
-                );
-        }
-    },
-
-    // --- FORM HANDLING ---
-    setupCreateForm() {
-        const songsContainer =
-            document.getElementById('create-songs');
-
-        songsContainer.innerHTML = '';
-
-        for (let i = 1; i <= 3; i++) {
-            songsContainer.innerHTML += `
-                <div class="input-group" style="background: rgba(0,0,0,0.02); padding: 1rem; border-radius: var(--radius-md);">
-                    <label>#${i} Song</label>
-
-                    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
-                        <input
-                            type="text"
-                            id="song-title-${i}"
-                            placeholder="Title"
-                            style="flex: 1;"
-                        >
-
-                        <input
-                            type="text"
-                            id="song-artist-${i}"
-                            placeholder="Artist"
-                            style="flex: 1;"
-                        >
-                    </div>
-
-                    <input
-                        type="text"
-                        id="song-reason-${i}"
-                        placeholder="Why this song? (Optional)"
-                    >
-                </div>
-            `;
-        }
-
-        this.addDynamicItem(
-            'goals',
-            'A goal...'
-        );
-
-        this.addDynamicItem(
-            'predictions',
-            'A prediction...'
-        );
-
-        this.addQAPair();
-    },
-
-    addDynamicItem(type, placeholder) {
-        const list =
-            document.getElementById(
-                `create-${type}-list`
-            );
-
-        const id =
-            Date.now() + Math.random();
-
-        const div =
-            document.createElement('div');
-
-        div.className = 'dynamic-item';
-        div.id = `item-${id}`;
-
-        div.innerHTML = `
-            <div class="input-group">
-                <input
-                    type="text"
-                    class="${type}-input"
-                    placeholder="${placeholder}"
-                >
-            </div>
-
-            <button
-                type="button"
-                class="remove-btn"
-                onclick="document.getElementById('item-${id}').remove()"
-            >
-                ✕
-            </button>
-        `;
-
-        list.appendChild(div);
-    },
-
-    addQAPair() {
-        const list =
-            document.getElementById(
-                'create-qa-list'
-            );
-
-        const id =
-            Date.now() + Math.random();
-
-        const div =
-            document.createElement('div');
-
-        div.className = 'dynamic-item';
-        div.style.flexDirection = 'column';
-        div.id = `qa-${id}`;
-
-        div.innerHTML = `
-            <div style="display:flex; width: 100%; gap: 10px;">
-                <div style="
-                    flex-grow:1;
-                    display:flex;
-                    flex-direction:column;
-                    gap:10px;
-                    background:rgba(0,0,0,0.02);
-                    padding:1rem;
-                    border-radius:var(--radius-md);
-                ">
-                    <input
-                        type="text"
-                        class="qa-q"
-                        placeholder="Question (e.g., What am I afraid of right now?)"
-                    >
-
-                    <input
-                        type="text"
-                        class="qa-a"
-                        placeholder="Answer"
-                    >
-                </div>
-
-                <button
-                    type="button"
-                    class="remove-btn"
-                    onclick="document.getElementById('qa-${id}').remove()"
-                >
-                    ✕
-                </button>
-            </div>
-        `;
-
-        list.appendChild(div);
-    },
-
-    handleImageSelect(event) {
-        const files = event.target.files;
-
-        if (!files || files.length === 0) {
-            return;
-        }
-
-        if (
-            this.state.currentImages.length +
-            files.length > 5
-        ) {
-            this.showToast(
-                "Maximum 5 images allowed.",
-                "error"
-            );
-            return;
-        }
-
-        Array.from(files).forEach(file => {
-            const reader = new FileReader();
-
-            reader.onload = (e) => {
-                const img = new Image();
-
-                img.onload = () => {
-                    const canvas =
-                        document.createElement('canvas');
-
-                    const MAX_WIDTH = 800;
-
-                    let width = img.width;
-                    let height = img.height;
-
-                    if (width > MAX_WIDTH) {
-                        height *=
-                            MAX_WIDTH / width;
-
-                        width = MAX_WIDTH;
-                    }
-
-                    canvas.width = width;
-                    canvas.height = height;
-
-                    const ctx =
-                        canvas.getContext('2d');
-
-                    ctx.drawImage(
-                        img,
-                        0,
-                        0,
-                        width,
-                        height
-                    );
-
-                    const dataUrl =
-                        canvas.toDataURL(
-                            'image/jpeg',
-                            0.7
-                        );
-
-                    this.state.currentImages.push({
-                        id:
-                            Date.now() +
-                            Math.random(),
-
-                        data: dataUrl
-                    });
-
-                    this.renderImagePreviews();
-                };
-
-                img.src = e.target.result;
-            };
-
-            reader.readAsDataURL(file);
-        });
-    },
-
-    renderImagePreviews() {
-        const container =
-            document.getElementById(
-                'create-image-previews'
-            );
-
-        container.innerHTML = '';
-
-        this.state.currentImages.forEach(imgObj => {
-            const wrapper =
-                document.createElement('div');
-
-            wrapper.className =
-                'img-preview-wrapper';
-
-            wrapper.innerHTML = `
-                <img
-                    src="${imgObj.data}"
-                    class="img-preview"
-                >
-
-                <div
-                    class="img-remove"
-                    onclick="app.removeImage('${imgObj.id}')"
-                >
-                    ✕
-                </div>
-            `;
-
-            container.appendChild(wrapper);
-        });
-    },
-
-    removeImage(id) {
-        this.state.currentImages =
-            this.state.currentImages.filter(
-                img => img.id != id
-            );
-
-        this.renderImagePreviews();
-    },
-
-    // --- CAPSULE CREATION ---
-    initiateSeal() {
-        /*
-         * Count capsules based on PERMANENT state.
-         * A demo-unlocked capsule is still an active capsule.
-         */
-        const activeCount =
-            this.data.capsules.filter(
-                c => c.status === 'sealed'
-            ).length;
-
-        if (activeCount >= 5) {
-            this.showToast(
-                "You've reached the limit of 5 active capsules.",
-                "error"
-            );
-            return;
-        }
-
-        const unlockDate =
-            new Date(
-                document.getElementById(
-                    'create-unlock'
-                ).value
-            );
-
-        if (unlockDate <= this.getNow()) {
-            this.showToast(
-                "Unlock date must be in the future.",
-                "error"
-            );
-            return;
-        }
-
-        document
-            .getElementById('modal-seal')
-            .classList.add('active');
-    },
-
-    confirmSeal() {
-        this.closeModal('modal-seal');
-
-        const goals =
-            Array.from(
-                document.querySelectorAll(
-                    '.goals-input'
-                )
-            )
-            .map(i => i.value)
-            .filter(
-                v => v.trim() !== ''
-            );
-
-        const predictions =
-            Array.from(
-                document.querySelectorAll(
-                    '.predictions-input'
-                )
-            )
-            .map(i => i.value)
-            .filter(
-                v => v.trim() !== ''
-            );
-
-        const customQuestions =
-            Array.from(
-                document.querySelectorAll(
-                    '#create-qa-list .dynamic-item'
-                )
-            )
-            .map(div => {
-                return {
-                    question:
-                        div.querySelector(
-                            '.qa-q'
-                        ).value,
-
-                    answer:
-                        div.querySelector(
-                            '.qa-a'
-                        ).value
-                };
-            })
-            .filter(
-                qa =>
-                    qa.question.trim() !== '' &&
-                    qa.answer.trim() !== ''
-            );
-
-        const songs = [];
-
-        for (let i = 1; i <= 3; i++) {
-            const title =
-                document.getElementById(
-                    `song-title-${i}`
-                ).value;
-
-            const artist =
-                document.getElementById(
-                    `song-artist-${i}`
-                ).value;
-
-            if (title) {
-                songs.push({
-                    rank: i,
-                    title,
-                    artist,
-                    reason:
-                        document.getElementById(
-                            `song-reason-${i}`
-                        ).value
-                });
-            }
-        }
-
-        const newCapsule = {
-            id:
-                crypto.randomUUID
-                    ? crypto.randomUUID()
-                    : 'cap_' + Date.now(),
-
-            title:
-                document.getElementById(
-                    'create-title'
-                ).value,
-
-            createdAt:
-                this.getNow().toISOString(),
-
-            unlockAt:
-                new Date(
-                    document.getElementById(
-                        'create-unlock'
-                    ).value
-                ).toISOString(),
-
-            status: 'sealed',
-
-            favorite: false,
-
-            theme:
-                document.getElementById(
-                    'create-theme'
-                ).value,
-
-            letter:
-                document.getElementById(
-                    'create-letter'
-                ).value,
-
-            images:
-                this.state.currentImages.map(
-                    img => img.data
-                ),
-
-            favoriteSongs: songs,
-
-            goals,
-
-            predictions,
-
-            customQuestions,
-
-            shortMessage:
-                document.getElementById(
-                    'create-short-message'
-                ).value,
-
-            thenNow: {
-                currentAnswers: {}
-            }
-        };
-
-        this.data.capsules.push(
-            newCapsule
-        );
-
-        this.saveData();
-
-        // Reset form
-        document
-            .getElementById(
-                'create-capsule-form'
-            )
-            .reset();
-
-        this.state.currentImages = [];
-
-        this.renderImagePreviews();
-
-        this.showToast(
-            "Capsule sealed successfully."
-        );
-
-        this.navigateTo(
-            'view-dashboard'
-        );
-    },
-
-    // --- RENDERING LISTS ---
-    renderDashboard() {
-        /*
-         * Active capsules are determined by saved state.
-         * Demo-unlocked capsules remain active.
-         */
-        const activeCapsules =
-            this.data.capsules.filter(
-                c => c.status === 'sealed'
-            );
-
-        document.getElementById(
-            'capsule-limit-text'
-        ).innerText =
-            `Active capsules: ${activeCapsules.length}/5`;
-
-        const btn =
-            document.getElementById(
-                'btn-dashboard-create'
-            );
-
-        btn.style.display =
-            activeCapsules.length >= 5
-                ? 'none'
-                : 'block';
-
-        const grid =
-            document.getElementById(
-                'active-capsules-grid'
-            );
-
-        grid.innerHTML =
-            activeCapsules.length === 0
-                ? '<p class="text-muted">No active capsules. Create one to begin.</p>'
-                : '';
-
-        activeCapsules.forEach(cap => {
-            grid.appendChild(
-                this.createCapsuleCard(cap)
-            );
-        });
-    },
-
-    renderArchive() {
-        const archiveCapsules =
-            this.data.capsules.filter(
-                c => c.status !== 'sealed'
-            );
-
-        archiveCapsules.sort(
-            (a, b) =>
-                new Date(b.openedAt || 0) -
-                new Date(a.openedAt || 0)
-        );
-
-        const grid =
-            document.getElementById(
-                'archive-capsules-grid'
-            );
-
-        grid.innerHTML =
-            archiveCapsules.length === 0
-                ? '<p class="text-muted">Archive is empty.</p>'
-                : '';
-
-        archiveCapsules.forEach(cap => {
-            grid.appendChild(
-                this.createCapsuleCard(cap)
-            );
-        });
-    },
-
-    createCapsuleCard(capsule) {
-        const card =
-            document.createElement('div');
-
-        const displayStatus =
-            this.getCapsuleDisplayStatus(
-                capsule
-            );
-
-        card.className =
-            `capsule-card ${
-                displayStatus === 'seal_broken'
-                    ? 'broken'
-                    : displayStatus
-            } theme-${capsule.theme}`;
-
-        const favClass =
-            capsule.favorite
-                ? 'active'
-                : '';
-
-        const favHeart =
-            capsule.favorite
-                ? '♥'
-                : '♡';
-
-        let statusText =
-            '🔒 SEALED';
-
-        if (displayStatus === 'unlocked') {
-            statusText =
-                '🔓 UNLOCKED';
-        }
-
-        if (displayStatus === 'seal_broken') {
-            statusText =
-                '⚠️ SEAL BROKEN';
-        }
-
-        let countdownHtml = '';
-
-        if (displayStatus === 'sealed') {
-            const days =
-                Math.max(
-                    0,
-                    Math.ceil(
-                        (
-                            new Date(
-                                capsule.unlockAt
-                            ) -
-                            this.getNow()
-                        ) /
-                        (
-                            1000 *
-                            60 *
-                            60 *
-                            24
-                        )
-                    )
-                );
-
-            countdownHtml = `
-                <div class="countdown">
-                    ${days} days remaining
-                </div>
-            `;
-        }
-
-        else if (
-            this.data.settings.demoMode &&
-            capsule.status === 'sealed'
-        ) {
-            countdownHtml = `
-                <div
-                    class="countdown"
-                    style="border:none; padding:0; text-align:left;"
-                >
-                    Demo preview — not permanently unlocked
-                </div>
-            `;
-        }
-
-        else {
-            countdownHtml = `
-                <div
-                    class="countdown"
-                    style="border:none; padding:0; text-align:left;"
-                >
-                    Opened on ${this.formatDate(
-                        capsule.openedAt
-                    )}
-                </div>
-            `;
-        }
-
-        card.innerHTML = `
-            <button
-                class="fav-btn ${favClass}"
-                onclick="event.stopPropagation(); app.toggleFavorite('${capsule.id}')"
-            >
-                ${favHeart}
-            </button>
-
-            <div
-                class="card-status ${
-                    displayStatus === 'seal_broken'
-                        ? 'broken'
-                        : displayStatus
-                }"
-            >
-                <span>
-                    ${statusText}
-                </span>
-            </div>
-
-            <h3>
-                ${capsule.title}
-            </h3>
-
-            <div class="card-dates">
-                Created:
-                ${this.formatDate(
-                    capsule.createdAt
-                )}
-                <br>
-
-                Opens:
-                ${this.formatDate(
-                    capsule.unlockAt
-                )}
-            </div>
-
-            ${countdownHtml}
-        `;
-
-        card.onclick = () =>
-            this.openCapsuleView(
-                capsule.id
-            );
-
-        return card;
-    },
-
-    toggleFavorite(id) {
-        const cap =
-            this.data.capsules.find(
-                c => c.id === id
-            );
-
-        if (cap) {
-            cap.favorite =
-                !cap.favorite;
-
-            this.saveData();
-
-            if (
-                this.state.currentView ===
-                'view-dashboard'
-            ) {
-                this.renderDashboard();
-            }
-
-            if (
-                this.state.currentView ===
-                'view-archive'
-            ) {
-                this.renderArchive();
-            }
-        }
-    },
-
-    // --- TIMELINE ---
-    renderTimeline() {
-        const container =
-            document.getElementById(
-                'timeline-container'
-            );
-
-        container.innerHTML = '';
-
-        const sorted =
-            [...this.data.capsules].sort(
-                (a, b) =>
-                    new Date(a.createdAt) -
-                    new Date(b.createdAt)
-            );
-
-        if (sorted.length === 0) {
-            container.innerHTML =
-                '<p class="text-muted" style="padding-left: 20px;">Timeline is empty.</p>';
-
-            return;
-        }
-
-        let currentYear = '';
-
-        sorted.forEach(cap => {
-            const date =
-                new Date(cap.createdAt);
-
-            const year =
-                date.getFullYear();
-
-            if (year !== currentYear) {
-                const yearLabel =
-                    document.createElement('h2');
-
-                yearLabel.style.paddingLeft =
-                    '40px';
-
-                yearLabel.style.marginBottom =
-                    '1rem';
-
-                yearLabel.style.color =
-                    'var(--accent-color)';
-
-                yearLabel.innerText =
-                    year;
-
-                container.appendChild(
-                    yearLabel
-                );
-
-                currentYear = year;
-            }
-
-            const displayStatus =
-                this.getCapsuleDisplayStatus(
-                    cap
-                );
-
-            const item =
-                document.createElement('div');
-
-            item.className =
-                `timeline-item ${
-                    displayStatus !== 'sealed'
-                        ? 'unlocked'
-                        : ''
-                }`;
-
-            const statusIcon =
-                displayStatus === 'sealed'
-                    ? '🔒'
-                    : displayStatus === 'seal_broken'
-                        ? '⚠️'
-                        : '🔓';
-
-            let timelineText =
-                'Unlocks ' +
-                this.formatDate(
-                    cap.unlockAt
-                );
-
-            if (
-                displayStatus ===
-                'seal_broken'
-            ) {
-                timelineText =
-                    'Seal broken';
-            }
-
-            else if (
-                displayStatus ===
-                'unlocked'
-            ) {
-                if (
-                    this.data.settings.demoMode &&
-                    cap.status === 'sealed'
-                ) {
-                    timelineText =
-                        'Demo preview';
-                } else {
-                    timelineText =
-                        'Opened';
-                }
-            }
-
-            item.innerHTML = `
-                <div class="timeline-dot"></div>
-
-                <div class="timeline-date">
-                    ${date.toLocaleDateString(
-                        undefined,
-                        {
-                            month: 'short',
-                            day: 'numeric'
-                        }
-                    )}
-                </div>
-
-                <div
-                    style="
-                        background: var(--surface-color);
-                        padding: 1rem;
-                        border-radius: var(--radius-md);
-                        border: 1px solid var(--border-color);
-                        display: inline-block;
-                        min-width: 200px;
-                    "
-                >
-                    <strong>
-                        ${cap.title}
-                    </strong>
-                    ${statusIcon}
-
-                    <div
-                        style="
-                            font-size: 0.8rem;
-                            color: var(--text-muted);
-                            margin-top: 5px;
-                        "
-                    >
-                        ${timelineText}
-                    </div>
-                </div>
-            `;
-
-            container.appendChild(item);
-        });
-    },
-
-    // --- VIEW CAPSULE ---
-    openCapsuleView(id) {
-        const cap =
-            this.data.capsules.find(
-                c => c.id === id
-            );
-
-        if (!cap) {
-            return;
-        }
-
-        this.state.activeCapsuleId = id;
-
-        this.navigateTo(
-            'view-capsule'
-        );
-
-        const container =
-            document.getElementById(
-                'capsule-container'
-            );
-
-        container.className =
-            `capsule-reading-view theme-${cap.theme}`;
-
-        const displayStatus =
-            this.getCapsuleDisplayStatus(
-                cap
-            );
-
-        if (displayStatus === 'sealed') {
-            document
-                .getElementById(
-                    'capsule-locked-content'
-                )
-                .classList.remove('hidden');
-
-            document
-                .getElementById(
-                    'capsule-unlocked-content'
-                )
-                .classList.add('hidden');
-
-            document.getElementById(
-                'locked-title'
-            ).innerText =
-                cap.title;
-
-            document.getElementById(
-                'locked-created'
-            ).innerText =
-                this.formatDate(
-                    cap.createdAt
-                );
-
-            document.getElementById(
-                'locked-unlocks'
-            ).innerText =
-                this.formatDateTime(
-                    cap.unlockAt
-                );
-
-            this.startCountdown(
-                cap.unlockAt
-            );
-        }
-
-        else {
-            document
-                .getElementById(
-                    'capsule-locked-content'
-                )
-                .classList.add('hidden');
-
-            document
-                .getElementById(
-                    'capsule-unlocked-content'
-                )
-                .classList.remove('hidden');
-
-            this.renderUnlockedContent(
-                cap
-            );
-        }
-    },
-
-    startCountdown(targetDateStr) {
-        clearInterval(
-            this.state.countdownInterval
-        );
-
-        const target =
-            new Date(
-                targetDateStr
-            ).getTime();
-
-        const update = () => {
-            const now =
-                this.getNow().getTime();
-
-            const diff =
-                target - now;
-
-            if (diff <= 0) {
-                clearInterval(
-                    this.state.countdownInterval
-                );
-
-                this.checkUnlocks();
-
-                return;
-            }
-
-            const d =
-                Math.floor(
-                    diff /
-                    (
-                        1000 *
-                        60 *
-                        60 *
-                        24
-                    )
-                );
-
-            const h =
-                Math.floor(
-                    (
-                        diff %
-                        (
-                            1000 *
-                            60 *
-                            60 *
-                            24
-                        )
-                    ) /
-                    (
-                        1000 *
-                        60 *
-                        60
-                    )
-                );
-
-            const m =
-                Math.floor(
-                    (
-                        diff %
-                        (
-                            1000 *
-                            60 *
-                            60
-                        )
-                    ) /
-                    (
-                        1000 *
-                        60
-                    )
-                );
-
-            const s =
-                Math.floor(
-                    (
-                        diff %
-                        (
-                            1000 *
-                            60
-                        )
-                    ) /
-                    1000
-                );
-
-            document.getElementById(
-                'cd-d'
-            ).innerText =
-                d.toString().padStart(
-                    2,
-                    '0'
-                );
-
-            document.getElementById(
-                'cd-h'
-            ).innerText =
-                h.toString().padStart(
-                    2,
-                    '0'
-                );
-
-            document.getElementById(
-                'cd-m'
-            ).innerText =
-                m.toString().padStart(
-                    2,
-                    '0'
-                );
-
-            document.getElementById(
-                'cd-s'
-            ).innerText =
-                s.toString().padStart(
-                    2,
-                    '0'
-                );
-        };
-
-        update();
-
-        this.state.countdownInterval =
-            setInterval(
-                update,
-                1000
-            );
-    },
-
-    renderUnlockedContent(cap) {
-        const displayStatus =
-            this.getCapsuleDisplayStatus(
-                cap
-            );
-
-        document.getElementById(
-            'read-title'
-        ).innerText =
-            cap.title +
-            (
-                displayStatus ===
-                'seal_broken'
-                    ? ' (Seal Broken)'
-                    : ''
-            );
-
-        document.getElementById(
-            'read-created'
-        ).innerText =
-            this.formatDate(
-                cap.createdAt
-            );
-
-        /*
-         * Demo-unlocked capsules don't have a real openedAt.
-         */
-        if (
-            this.data.settings.demoMode &&
-            cap.status === 'sealed' &&
-            displayStatus === 'unlocked'
-        ) {
-            document.getElementById(
-                'read-opened'
-            ).innerText =
-                'Demo Preview — not permanently opened';
-        }
-
-        else if (cap.openedAt) {
-            document.getElementById(
-                'read-opened'
-            ).innerText =
-                this.formatDate(
-                    cap.openedAt
-                );
-        }
-
-        else {
-            document.getElementById(
-                'read-opened'
-            ).innerText =
-                'Not opened yet';
-        }
-
-        document.getElementById(
-            'read-letter'
-        ).innerText =
-            cap.letter;
-
-        // Images
-        const imgContainer =
-            document.getElementById(
-                'read-images'
-            );
-
-        if (
-            cap.images &&
-            cap.images.length > 0
-        ) {
-            document.getElementById(
-                'section-images'
-            ).style.display =
-                'block';
-
-            imgContainer.innerHTML =
-                cap.images
-                    .map(
-                        src => `
-                            <img
-                                src="${src}"
-                                style="
-                                    max-width:100%;
-                                    border-radius:var(--radius-md);
-                                    box-shadow:var(--shadow-sm);
-                                "
-                            >
-                        `
-                    )
-                    .join('');
-        }
-
-        else {
-            document.getElementById(
-                'section-images'
-            ).style.display =
-                'none';
-        }
-
-        // Songs
-        const songsContainer =
-            document.getElementById(
-                'read-songs'
-            );
-
-        if (
-            cap.favoriteSongs &&
-            cap.favoriteSongs.length > 0
-        ) {
-            document.getElementById(
-                'section-songs'
-            ).style.display =
-                'block';
-
-            songsContainer.innerHTML =
-                cap.favoriteSongs
-                    .map(
-                        s => `
-                            <div style="margin-bottom:1rem;">
-                                <strong>
-                                    #${s.rank}
-                                    ${s.title}
-                                </strong>
-                                by ${s.artist}
-
-                                ${
-                                    s.reason
-                                        ? `
-                                            <br>
-                                            <span
-                                                style="
-                                                    font-style:italic;
-                                                    color:var(--text-muted);
-                                                "
-                                            >
-                                                "${s.reason}"
-                                            </span>
-                                        `
-                                        : ''
-                                }
-                            </div>
-                        `
-                    )
-                    .join('');
-        }
-
-        else {
-            document.getElementById(
-                'section-songs'
-            ).style.display =
-                'none';
-        }
-
-        // THEN VS NOW
-        const tnGoals =
-            document.getElementById(
-                'then-now-goals'
-            );
-
-        const tnPreds =
-            document.getElementById(
-                'then-now-predictions'
-            );
-
-        const tnQA =
-            document.getElementById(
-                'then-now-qa'
-            );
-
-        let hasThenNowContent =
-            false;
-
-        tnGoals.innerHTML = '';
-        tnPreds.innerHTML = '';
-        tnQA.innerHTML = '';
-
-        if (!cap.thenNow) {
-            cap.thenNow = {
-                currentAnswers: {}
-            };
-        }
-
-        if (!cap.thenNow.currentAnswers) {
-            cap.thenNow.currentAnswers = {};
-        }
-
-        const currentAnswers =
-            cap.thenNow.currentAnswers;
-
-        let isEditing = false;
-
-        const buildThenNowRow =
-            (
-                id,
-                label,
-                thenText
-            ) => {
-                hasThenNowContent = true;
-
-                const nowVal =
-                    currentAnswers[id] ||
-                    '';
-
-                if (!nowVal) {
-                    isEditing = true;
-                }
-
-                return `
-                    <div class="then-now-grid mb-4">
-                        <div class="then-col">
-                            <div
-                                class="text-muted"
-                                style="
-                                    font-size:0.8rem;
-                                    text-transform:uppercase;
-                                "
-                            >
-                                ${label} (Then)
-                            </div>
-
-                            <div>
-                                ${thenText}
-                            </div>
-                        </div>
-
-                        <div class="now-col">
-                            <div
-                                class="text-muted"
-                                style="
-                                    font-size:0.8rem;
-                                    text-transform:uppercase;
-                                "
-                            >
-                                Now
-                            </div>
-
-                            ${
-                                nowVal
-                                    ? `
-                                        <div>
-                                            ${nowVal}
-                                        </div>
-                                    `
-                                    : `
-                                        <textarea
-                                            data-tn-id="${id}"
-                                            class="tn-input"
-                                            placeholder="Reflect on this now..."
-                                            style="
-                                                min-height:60px;
-                                                width:100%;
-                                                border:none;
-                                                background:transparent;
-                                                resize:none;
-                                            "
-                                        ></textarea>
-                                    `
-                            }
-                        </div>
-                    </div>
-                `;
-            };
-
-        if (
-            cap.goals &&
-            cap.goals.length > 0
-        ) {
-            tnGoals.innerHTML =
-                '<h4 class="serif mt-4 mb-4">Goals</h4>' +
-                cap.goals
-                    .map(
-                        (g, i) =>
-                            buildThenNowRow(
-                                `goal_${i}`,
-                                'Goal',
-                                g
-                            )
-                    )
-                    .join('');
-        }
-
-        if (
-            cap.predictions &&
-            cap.predictions.length > 0
-        ) {
-            tnPreds.innerHTML =
-                '<h4 class="serif mt-4 mb-4">Predictions</h4>' +
-                cap.predictions
-                    .map(
-                        (p, i) =>
-                            buildThenNowRow(
-                                `pred_${i}`,
-                                'Prediction',
-                                p
-                            )
-                    )
-                    .join('');
-        }
-
-        if (
-            cap.customQuestions &&
-            cap.customQuestions.length > 0
-        ) {
-            tnQA.innerHTML =
-                '<h4 class="serif mt-4 mb-4">Q&A</h4>' +
-                cap.customQuestions
-                    .map(
-                        (qa, i) =>
-                            buildThenNowRow(
-                                `qa_${i}`,
-                                qa.question,
-                                qa.answer
-                            )
-                    )
-                    .join('');
-        }
-
-        const btnSaveNow =
-            document.getElementById(
-                'btn-save-now'
-            );
-
-        if (hasThenNowContent) {
-            document.getElementById(
-                'section-then-now'
-            ).style.display =
-                'block';
-
-            btnSaveNow.className =
-                isEditing
-                    ? 'btn btn-primary'
-                    : 'hidden';
-        }
-
-        else {
-            document.getElementById(
-                'section-then-now'
-            ).style.display =
-                'none';
-
-            btnSaveNow.className =
-                'hidden';
-        }
-
-        // Final Message
-        document.getElementById(
-            'read-short-message'
-        ).innerText =
-            cap.shortMessage;
-    },
-
-    saveThenNowAnswers() {
-        const cap =
-            this.data.capsules.find(
-                c =>
-                    c.id ===
-                    this.state.activeCapsuleId
-            );
-
-        if (!cap) {
-            return;
-        }
-
-        if (!cap.thenNow) {
-            cap.thenNow = {
-                currentAnswers: {}
-            };
-        }
-
-        if (!cap.thenNow.currentAnswers) {
-            cap.thenNow.currentAnswers = {};
-        }
-
-        const inputs =
-            document.querySelectorAll(
-                '.tn-input'
-            );
-
-        let savedAny = false;
-
-        inputs.forEach(input => {
-            if (input.value.trim()) {
-                cap.thenNow.currentAnswers[
-                    input.getAttribute(
-                        'data-tn-id'
-                    )
-                ] =
-                    input.value.trim();
-
-                savedAny = true;
-            }
-        });
-
-        if (savedAny) {
-            this.saveData();
-
-            this.renderUnlockedContent(
-                cap
-            );
-
-            this.showToast(
-                "Reflections saved to archive."
-            );
-        }
-
-        else {
-            this.showToast(
-                "No new reflections to save.",
-                "error"
-            );
-        }
-    },
-
-    // --- UNLOCK LOGIC ---
-    checkUnlocks() {
-        const now =
-            this.getNow();
-
-        let newlyUnlocked = 0;
-
-        /*
-         * DEMO MODE
-         *
-         * Never permanently change capsule status.
-         * The visual unlock is handled by
-         * getCapsuleDisplayStatus().
-         */
-        if (this.data.settings.demoMode) {
-            if (
-                this.state.currentView ===
-                'view-dashboard'
-            ) {
-                this.renderDashboard();
-            }
-
-            else if (
-                this.state.currentView ===
-                'view-archive'
-            ) {
-                this.renderArchive();
-            }
-
-            else if (
-                this.state.currentView ===
-                'view-timeline'
-            ) {
-                this.renderTimeline();
-            }
-
-            else if (
-                this.state.currentView ===
-                'view-capsule' &&
-                this.state.activeCapsuleId
-            ) {
-                this.openCapsuleView(
-                    this.state.activeCapsuleId
-                );
-            }
-
-            return;
-        }
-
-        /*
-         * REAL TIME
-         *
-         * Only now can a capsule become
-         * permanently unlocked.
-         */
-        this.data.capsules.forEach(cap => {
-            if (cap.status !== 'sealed') {
-                return;
-            }
-
-            const unlockTime =
-                new Date(
-                    cap.unlockAt
-                );
-
-            if (now >= unlockTime) {
-                cap.status =
-                    'unlocked';
-
-                cap.openedAt =
-                    now.toISOString();
-
-                newlyUnlocked++;
-
-                if (
-                    this.state.currentView ===
-                    'view-capsule' &&
-                    this.state.activeCapsuleId ===
-                    cap.id
-                ) {
-                    this.openCapsuleView(
-                        cap.id
-                    );
-                }
-            }
-        });
-
-        if (newlyUnlocked > 0) {
-            this.saveData();
-
-            this.showToast(
-                `🔓 ${newlyUnlocked} capsule(s) just unlocked!`
-            );
-
-            if (
-                this.state.currentView ===
-                'view-dashboard'
-            ) {
-                this.renderDashboard();
-            }
-
-            if (
-                this.state.currentView ===
-                'view-archive'
-            ) {
-                this.renderArchive();
-            }
-
-            if (
-                this.state.currentView ===
-                'view-timeline'
-            ) {
-                this.renderTimeline();
-            }
-        }
-    },
-
-    // --- BREAK SEAL ---
-    requestBreakSeal() {
-        document
-            .getElementById(
-                'modal-break'
-            )
-            .classList.add('active');
-    },
-
-    executeBreakSeal() {
-        this.closeModal(
-            'modal-break'
-        );
-
-        const cap =
-            this.data.capsules.find(
-                c =>
-                    c.id ===
-                    this.state.activeCapsuleId
-            );
-
-        if (!cap) {
-            return;
-        }
-
-        /*
-         * Break Seal is a permanent user action.
-         *
-         * It is different from Demo Mode.
-         */
-        if (
-            cap.status === 'sealed'
-        ) {
-            cap.status =
-                'seal_broken';
-
-            cap.openedAt =
-                new Date().toISOString();
-
-            this.saveData();
-
-            this.openCapsuleView(
-                cap.id
-            );
-
-            this.showToast(
-                "Seal broken.",
-                "error"
-            );
-        }
-    },
-
-    // --- UTILS ---
-    closeModal(id) {
-        document
-            .getElementById(id)
-            .classList.remove('active');
-    },
-
-    showToast(
-        message,
-        type = 'success'
-    ) {
-        const container =
-            document.getElementById(
-                'toast-container'
-            );
-
-        const toast =
-            document.createElement('div');
-
-        toast.className =
-            'toast';
-
-        if (type === 'error') {
-            toast.style.borderLeftColor =
-                '#C24A3F';
-        }
-
-        toast.innerHTML =
-            `<span>${message}</span>`;
-
-        container.appendChild(
-            toast
-        );
-
-        setTimeout(() => {
-            toast.style.opacity =
-                '0';
-
-            toast.style.transform =
-                'translateX(100%)';
-
-            setTimeout(
-                () => toast.remove(),
-                300
-            );
-        }, 3000);
-    },
-
-    // --- EXPORT / IMPORT ---
-    exportData() {
-        const dataStr =
-            JSON.stringify(
-                this.data,
-                null,
-                2
-            );
-
-        const blob =
-            new Blob(
-                [dataStr],
-                {
-                    type:
-                        "application/json"
-                }
-            );
-
-        const url =
-            URL.createObjectURL(
-                blob
-            );
-
-        const a =
-            document.createElement(
-                'a'
-            );
-
-        a.href = url;
-
-        const date =
-            new Date()
-                .toISOString()
-                .split('T')[0];
-
-        a.download =
-            `time-capsule-backup-${date}.json`;
-
-        document.body.appendChild(
-            a
-        );
-
-        a.click();
-
-        document.body.removeChild(
-            a
-        );
-
-        URL.revokeObjectURL(
-            url
-        );
-    },
-
-    importData(event) {
-        const file =
-            event.target.files[0];
-
-        if (!file) {
-            return;
-        }
-
-        const reader =
-            new FileReader();
-
-        reader.onload = (e) => {
-            try {
-                const importedData =
-                    JSON.parse(
-                        e.target.result
-                    );
-
-                if (
-                    importedData &&
-                    importedData.capsules
-                ) {
-                    this.data =
-                        importedData;
-
-                    this.saveData();
-
-                    this.applySettings();
-
-                    this.showToast(
-                        "Backup imported successfully."
-                    );
-
-                    setTimeout(
-                        () =>
-                            window.location.reload(),
-                        1500
-                    );
-                }
-
-                else {
-                    throw new Error(
-                        "Invalid format"
-                    );
-                }
-            }
-
-            catch (err) {
-                console.error(
-                    "Import error:",
-                    err
-                );
-
-                this.showToast(
-                    "Invalid backup file.",
-                    "error"
-                );
+                setTimeout(() => window.location.reload(), 1200);
+            } catch (error) {
+                console.error('Import error:', error);
+                this.showToast('Invalid backup file.', 'error');
+            } finally {
+                event.target.value = '';
             }
         };
 
@@ -2145,15 +1826,6 @@ const App = {
     }
 };
 
-
-// Initialize application
-window.addEventListener(
-    'DOMContentLoaded',
-    () => {
-        App.init();
-    }
-);
-
-
-// Expose App globally for inline onclick handlers
+// Initialize application and expose it for existing inline HTML handlers.
+window.addEventListener('DOMContentLoaded', () => App.init());
 window.app = App;
