@@ -1,0 +1,127 @@
+/* =========================================================
+   GRACE WORKS — VIOLET SIGNAL TYPOGRAPHY
+   Trial System v0.1 — Direction A: Expressive Studio
+   Add AFTER the existing css/style.css. This file only adjusts typography.
+========================================================= */
+
+:root {
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-body: 'Space Grotesk', system-ui, sans-serif;
+    --font-interface: 'Space Grotesk', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', 'Courier New', monospace;
+
+    --type-display-tight: -.045em;
+    --type-interface-tight: -.022em;
+    --type-label-tracking: .075em;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+    font-family: var(--font-interface);
+}
+
+h1,
+h2,
+h3,
+.serif,
+.hero p,
+.logo,
+.capsule-card h3,
+.timeline-item strong,
+.letter-content,
+.final-message {
+    font-family: var(--font-display);
+}
+
+h1,
+h2,
+h3 {
+    font-optical-sizing: auto;
+    font-weight: 500;
+    letter-spacing: var(--type-display-tight);
+    text-wrap: pretty;
+}
+
+body {
+    font-optical-sizing: auto;
+    font-weight: 400;
+    letter-spacing: -.008em;
+}
+
+.logo {
+    font-weight: 600;
+    letter-spacing: -.04em;
+}
+
+/* Interface labels stay crisp; avoid using display serif for controls. */
+.nav-link,
+.btn,
+.header-action .text-muted,
+.input-group label,
+.form-section label,
+.profile-widget,
+.card-actions,
+button,
+input,
+textarea,
+select {
+    font-family: var(--font-interface);
+}
+
+/* Technical mono is an intentional visual signature, not decoration. */
+.card-status,
+.countdown,
+#view-settings .input-group label,
+#create-songs > .input-group label,
+.timeline-date,
+.cd-num,
+.cd-label,
+.reading-meta,
+.demo-widget strong,
+.ea-create-index-heading,
+.ea-index-number,
+.ea-intro-index,
+.ea-unforgotten-card .card-status {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.card-status,
+.cd-label,
+.ea-create-index-heading,
+.ea-intro-index {
+    letter-spacing: var(--type-label-tracking);
+}
+
+/* Keep capsule writing personal and readable, not overly technical. */
+.letter-content,
+.final-message,
+#read-songs strong,
+#create-songs input[id^='song-reason'],
+.then-now-grid .tn-input {
+    font-family: var(--font-display);
+}
+
+/* The hero is the emotional entry point: expressive, but still readable. */
+.hero h1 {
+    font-weight: 500;
+    letter-spacing: -.052em;
+    line-height: .94;
+    text-wrap: balance;
+}
+
+.hero p {
+    font-weight: 400;
+    letter-spacing: -.02em;
+}
+
+/* Small screens: preserve the personality without making headings collide. */
+@media (max-width: 520px) {
+    .hero h1 {
+        letter-spacing: -.045em;
+        line-height: .98;
+    }
+}
