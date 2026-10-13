@@ -21,11 +21,11 @@
                 <span>EverAfter</span>
             </div>
             <ul class="nav-links">
-                <li><a href="#view-home" class="nav-link active" data-target="view-home">⌂ Home</a></li>
-                <li><a href="#view-dashboard" class="nav-link" data-target="view-dashboard">🗂 My Capsules</a></li>
-                <li><a href="#view-archive" class="nav-link" data-target="view-archive">🏛 Archive</a></li>
-                <li><a href="#view-timeline" class="nav-link" data-target="view-timeline">⏱ Timeline</a></li>
-                <li><a href="#view-settings" class="nav-link" data-target="view-settings">⚙ Settings</a></li>
+                <li><a href="#view-home" class="nav-link active" data-target="view-home"></a></li>
+                <li><a href="#view-dashboard" class="nav-link" data-target="view-dashboard"></a></li>
+                <li><a href="#view-archive" class="nav-link" data-target="view-archive"></a></li>
+                <li><a href="#view-timeline" class="nav-link" data-target="view-timeline"></a></li>
+                <li><a href="#view-settings" class="nav-link" data-target="view-settings"></a></li>
             </ul>
             <div class="profile-widget">
                 <p id="nav-greeting" class="text-muted">Welcome.</p>
@@ -36,7 +36,7 @@
             <section id="view-home" class="view active">
                 <div class="hero">
                     <img src="https://bintanganakbaik.github.io/EverAfter/assets/images/logo.png" alt="Logo" class="mid-logo">
-                    <h1>Write something now.<br>Seal it. Let time reveal it.</h1>
+                    <h1>Write something now .<br>Seal it . Let time reveal it .</h1>
                     <p>“Some things are meant to find you later.”</p>
                     <button class="btn btn-primary" style="font-size: 1.2rem; padding: 1rem 2.5rem;"
                         onclick="app.navigateTo('view-create')">CREATE CAPSULE</button>
@@ -144,7 +144,7 @@
                     </div>
                     <div class="input-group">
                         <label>App Version</label>
-                        <p>0.6</p>
+                        <p>0.7</p>
                     </div>
                 </div>
 
@@ -158,11 +158,15 @@
                     <div class="input-group">
                         <label>Email</label>
                         <p><a href="mailto:oryzabb08@gmail.com">oryzabb08@gmail.com</a></p>
+                        <p><a href="mailto:graceatudio@gmail.com">graceatudio@gmail.com</a></p>
                     </div>
                     <div class="input-group">
                         <label>Instagram</label>
                         <p><a href="https://www.instagram.com/Unortodoxjukebox/" target="_blank"
                                 rel="noopener noreferrer">@Unortodoxjukebox</a></p>
+                        
+                        <p><a href="https://www.instagram.com/itsgraceworks?cplk=MXBvcTVieDVnd3ZpNw%3D%3D" target="_blank"
+                                rel="noopener noreferrer">@itsgraceworks</a></p>
                     </div>
                 </div>
             </section>
@@ -176,7 +180,7 @@
 
                 <form id="create-capsule-form" onsubmit="event.preventDefault(); app.initiateSeal();">
                     <div class="form-section">
-                        <h2>1. The Basics</h2>
+                        <h2>The Basics</h2>
                         <div class="input-group">
                             <label for="create-title">Capsule Title *</label>
                             <input type="text" id="create-title" required
@@ -199,14 +203,14 @@
                     </div>
 
                     <div class="form-section">
-                        <h2>2. The Letter</h2>
+                        <h2>The Letter</h2>
                         <p class="text-muted mb-4">Write a message to the person you will become.</p>
                         <div class="input-group"><textarea id="create-letter" required
                                 placeholder="Dear future me..."></textarea></div>
                     </div>
 
                     <div class="form-section">
-                        <h2>3. Images (Local Storage)</h2>
+                        <h2>Images (Local Storage)</h2>
                         <p class="text-muted mb-4">Attach a few photos. (Max 500KB total to prevent storage issues).</p>
                         <div class="file-upload-wrapper" onclick="document.getElementById('create-images').click()">
                             Click to select images</div>
@@ -216,7 +220,7 @@
                     </div>
 
                     <div class="form-section">
-                        <h2>4. Top 3 Favorite Songs</h2>
+                        <h2>Top 3 Favorite Songs</h2>
                         <p class="text-muted mb-4">What is the soundtrack of your life right now?</p>
                         <div id="create-songs"></div>
                     </div>
@@ -235,7 +239,7 @@
                     </div>
 
                     <div class="form-section">
-                        <h2>6. Goals &amp; Predictions</h2>
+                        <h2>Goals &amp; Predictions</h2>
                         <div class="input-group">
                             <label>Goals</label>
                             <div id="create-goals-list" class="dynamic-list"></div>
@@ -253,14 +257,14 @@
                     </div>
 
                     <div class="form-section">
-                        <h2>7. Custom Questions</h2>
+                        <h2>Custom Questions</h2>
                         <p class="text-muted mb-4">Ask yourself questions to see how your answers change over time.</p>
                         <div id="create-qa-list" class="dynamic-list"></div>
                         <button type="button" class="btn btn-outline" onclick="app.addQAPair()">+ Add Q&amp;A</button>
                     </div>
 
                     <div class="form-section">
-                        <h2>8. Final Words</h2>
+                        <h2>Final Words</h2>
                         <div class="input-group">
                             <label for="create-short-message">Short Message (Appears at the very end) *</label>
                             <input type="text" id="create-short-message" required
@@ -369,7 +373,8 @@
     <div id="toast-container" class="toast-container"></div>
 
     <script src="./js/script.js"></script>
-    <script src=""></script>
+    <script src="./js/everafter-upgrade.js"></script>
+    <script src="./js/everafter-features.js"></script>
 </body>
 
 </html>
