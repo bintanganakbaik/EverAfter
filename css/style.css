@@ -109,7 +109,7 @@ p { margin-bottom: 1rem; }
     font-weight: 600;
     letter-spacing: -.045em;
 }
-.logo-img { width: 35px; height: 35px; object-fit: contain; }
+.logo-img { width: 55px; height: 55px; object-fit: contain; }
 .nav-links {
     display: grid;
     gap: 7px;
