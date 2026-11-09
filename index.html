@@ -3,13 +3,13 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>EverAfter | Let time reveal it</title>
     <link rel="icon" type="image/png" href="/images/logo.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600&family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap"
         rel="stylesheet">
     <link rel="stylesheet" href="./css/style.css">
     <link rel="stylesheet" href="./css/typography-violet-signal.css">
@@ -42,8 +42,8 @@
                         class="mid-logo">
                     <h1>Write something now .<br>Seal it . Let time reveal it .</h1>
                     <p>“Some things are meant to find you later.”</p>
-                    <button class="btn btn-primary" style="font-size: 1.2rem; padding: 1rem 2.5rem;"
-                        onclick="app.navigateTo('view-create')">CREATE CAPSULE</button>
+                    <button class="btn btn-primary hero-cta" onclick="app.navigateTo('view-create')">CREATE
+                        CAPSULE</button>
                 </div>
             </section>
 
@@ -96,12 +96,12 @@
                         <label for="setting-theme">Theme</label>
                         <select id="setting-theme" onchange="app.changeTheme(this.value)">
                             <option value="light">Light (Paper)</option>
-                            <option value="dark">Dark (Midnight)</option>
+                            <option value="dark">Dark (Plum Night)</option>
                         </select>
                     </div>
                 </div>
 
-                <div class="form-section" style="border-color: var(--accent-color);">
+                <div class="form-section form-section--demo">
                     <h2>Time Simulation (Demo Mode)</h2>
                     <p class="text-muted mb-4">Jump forward in time to demonstrate unlocking capsules without waiting.
                     </p>
@@ -109,7 +109,7 @@
                         <label for="setting-demo-time">Simulate Date &amp; Time</label>
                         <input type="datetime-local" id="setting-demo-time">
                     </div>
-                    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <div class="btn-row">
                         <button class="btn btn-primary" onclick="app.enableDemoMode()">Start Simulation</button>
                         <button class="btn btn-outline" onclick="app.disableDemoMode()">Reset to Real Time</button>
                     </div>
@@ -119,11 +119,11 @@
                     <h2>Data Management</h2>
                     <p class="text-muted mb-4">Export your capsules to a JSON file to back them up, or import an
                         existing backup.</p>
-                    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <div class="btn-row">
                         <button class="btn btn-outline" onclick="app.exportData()">📥 Export Backup</button>
                         <button class="btn btn-outline" onclick="document.getElementById('import-file').click()">📤
                             Import Backup</button>
-                        <input type="file" id="import-file" accept=".json" style="display:none"
+                        <input type="file" id="import-file" accept=".json" class="hidden"
                             onchange="app.importData(event)">
                     </div>
                 </div>
@@ -218,7 +218,7 @@
                         <p class="text-muted mb-4">Attach a few photos. (Max 500KB total to prevent storage issues).</p>
                         <div class="file-upload-wrapper" onclick="document.getElementById('create-images').click()">
                             Click to select images</div>
-                        <input type="file" id="create-images" accept="image/*" multiple style="display:none"
+                        <input type="file" id="create-images" accept="image/*" multiple class="hidden"
                             onchange="app.handleImageSelect(event)">
                         <div class="image-preview-container" id="create-image-previews"></div>
                     </div>
@@ -230,7 +230,7 @@
                     </div>
 
                     <div class="form-section">
-                        <h2>5. Social Media Memories</h2>
+                        <h2>Social Media Memories</h2>
                         <p class="text-muted mb-4">
                             Remember the digital identities you had when this capsule was created.
                         </p>
@@ -276,9 +276,8 @@
                         </div>
                     </div>
 
-                    <div class="text-center" style="margin: 4rem 0;">
-                        <button type="submit" class="btn btn-primary"
-                            style="font-size: 1.5rem; padding: 1rem 3rem;">SEAL CAPSULE 🔒</button>
+                    <div class="text-center mt-4 mb-4">
+                        <button type="submit" class="btn btn-primary seal-cta">SEAL CAPSULE 🔒</button>
                     </div>
                 </form>
             </section>
@@ -301,9 +300,9 @@
                                     class="cd-label">Seconds</span></div>
                         </div>
                         <p class="text-muted">Unlocks: <span id="locked-unlocks"></span></p>
-                        <div style="margin-top: 4rem;">
-                            <button class="btn btn-text" onclick="app.requestBreakSeal()"
-                                style="color: var(--text-muted); font-size: 0.8rem;">Break Seal (Warning)</button>
+                        <div class="break-wrap">
+                            <button class="btn btn-text break-link" onclick="app.requestBreakSeal()">Break Seal
+                                (Warning)</button>
                         </div>
                     </div>
 
@@ -359,8 +358,8 @@
     </div>
 
     <div class="modal-overlay" id="modal-break">
-        <div class="modal-content" style="border-top: 4px solid #C24A3F;">
-            <h2 class="serif mb-4" style="color: #C24A3F;">BREAK THE SEAL?</h2>
+        <div class="modal-content modal-danger">
+            <h2 class="serif mb-4">BREAK THE SEAL?</h2>
             <p>Breaking the seal means opening this capsule before its intended time. It will be permanently marked as
                 "Seal Broken".</p>
             <div class="modal-actions">
